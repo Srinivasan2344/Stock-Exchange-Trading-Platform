@@ -1,5 +1,4 @@
 import pandas as pd
-
 df = pd.read_csv("data/processed_stock_data.csv")
 
 latest = df.iloc[-1]
@@ -24,6 +23,13 @@ if latest["MACD"] > latest["Signal_Line"]:
 else:
     score -= 1
 
+sentiment_score = 0.5
+
+if sentiment_score > 0:
+    score += 1
+else:
+    score -= 1
+
 if score >= 2:
     signal = "STRONG BUY"
 elif score == 1:
@@ -37,3 +43,5 @@ else:
 
 print("Trading Signal:", signal)
 print("Score:", score)
+confidence = ((score + 4) / 8) * 100
+print("Confidence:", round(confidence, 2), "%")
