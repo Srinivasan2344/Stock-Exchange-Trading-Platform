@@ -1,26 +1,27 @@
+
 import streamlit as st
 import pandas as pd
 import yfinance as yf
 import joblib
+from sqlalchemy import create_engine
+from src.portfolio_recommendation import recommend_portfolio
+from src.market_alert import generate_alert
 
 st.set_page_config(
     page_title="AI Stock Trading Dashboard",
     layout="wide"
 )
 
+st.title("AI Stock Trading Dashboard")
 
 # LOAD DATA
 
-df = pd.read_csv("data/processed_stock_data.csv")
 
+df = pd.read_csv("data/processed_stock_data.csv")
 model = joblib.load("models/xgboost_model.pkl")
 
-st.title(" AI Stock Trading Dashboard")
-
-
-# LATEST METRICS
-
 latest = df.iloc[-1]
+# LATEST METRICS
 
 col1, col2, col3 = st.columns(3)
 
@@ -39,39 +40,41 @@ col3.metric(
     f"₹{latest['MA20']:.2f}"
 )
 
-# PRICE TREND
 
-st.subheader(" Stock Price Trend")
+# STOCK PRICE TREND
+
+
+st.subheader("Stock Price Trend")
 
 st.line_chart(
     df.set_index("Date")["Close"]
 )
 
+
 # MOVING AVERAGES
 
-st.subheader(" Moving Averages")
+
+st.subheader("Moving Averages")
 
 st.line_chart(
-    df.set_index("Date")[
-        ["Close", "MA10", "MA20"]
-    ]
+    df.set_index("Date")[["Close", "MA10", "MA20"]]
 )
+
 
 # RECENT DATA
 
-st.subheader("📋 Recent Data")
 
+st.subheader("Recent Data")
 st.dataframe(df.tail())
 
-
 # RISK ANALYTICS
+
 
 returns = df["Return"]
 
 volatility = returns.std() * (252 ** 0.5)
 
 cumulative = (1 + returns).cumprod()
-
 running_max = cumulative.cummax()
 
 drawdown = (
@@ -80,7 +83,7 @@ drawdown = (
 
 max_drawdown = drawdown.min()
 
-st.subheader("⚠ Risk Metrics")
+st.subheader("Risk Metrics")
 
 col4, col5 = st.columns(2)
 
@@ -94,9 +97,9 @@ col5.metric(
     f"{max_drawdown:.2%}"
 )
 
-# AI PRICE PREDICTION
+# AI PREDICTION
 
-st.subheader("🤖 AI Prediction Engine")
+st.subheader(" AI Prediction Engine")
 
 features = [[
     latest["Open"],
@@ -116,8 +119,6 @@ st.metric(
     f"₹{prediction:.2f}"
 )
 
-# BUY / SELL SIGNAL
-
 current_price = latest["Close"]
 
 if prediction > current_price:
@@ -127,15 +128,12 @@ else:
     signal = "SELL"
     st.error(" SELL Signal")
 
-# CONFIDENCE SCORE
-
 difference = abs(
     prediction - current_price
 )
 
 confidence = min(
-    (difference / current_price)
-    * 100 * 10,
+    (difference / current_price) * 100 * 10,
     100
 )
 
@@ -144,9 +142,10 @@ st.metric(
     f"{confidence:.1f}%"
 )
 
-# LIVE STOCK DATA
 
-st.subheader(" Live Market Data")
+# LIVE MARKET DATA
+
+st.subheader("Live Market Data")
 
 stock = st.selectbox(
     "Select Stock",
@@ -205,7 +204,89 @@ for ticker in stocks:
 
 st.line_chart(comparison)
 
-# PORTFOLIO ANALYTICS
+# PORTFOLIO
+
+st.subheader("Portfolio Holdings")
+
+try:
+
+    engine = create_engine(
+        "postgresql://postgres:durai123@localhost:5432/stock_trading"
+    )
+
+    portfolio_df = pd.read_sql(
+        "SELECT * FROM portfolio",
+        engine
+    )
+
+    st.dataframe(portfolio_df)
+
+    if not portfolio_df.empty:
+
+        portfolio_df["investment"] = (
+            portfolio_df["quantity"]
+            * portfolio_df["buy_price"]
+        )
+
+        total_value = portfolio_df[
+            "investment"
+        ].sum()
+
+        st.subheader(" Portfolio Summary")
+
+        c1, c2 = st.columns(2)
+
+        c1.metric(
+            "Total Portfolio Value",
+            f"₹{total_value:,.2f}"
+        )
+
+        c2.metric(
+            "Total Holdings",
+            len(portfolio_df)
+        )
+
+        portfolio_list = portfolio_df[
+            ["stock", "quantity", "buy_price"]
+        ].to_dict("records")
+
+        recommendations = recommend_portfolio(
+            portfolio_list
+        )
+
+        st.subheader(
+            " Portfolio Recommendations"
+        )
+
+        for rec in recommendations:
+            st.warning(rec)
+
+except Exception as e:
+
+    st.warning(
+        f"Portfolio Error: {e}"
+    )
+
+# TRADE HISTORY
+
+st.subheader(" Trade History")
+
+try:
+
+    trade_df = pd.read_sql(
+        "SELECT * FROM trade_history",
+        engine
+    )
+
+    st.dataframe(trade_df)
+
+except Exception as e:
+
+    st.warning(
+        f"Trade History Error: {e}"
+    )
+
+# PORTFOLIO SIMULATOR
 
 st.subheader(" Portfolio Simulator")
 
@@ -224,40 +305,43 @@ st.metric(
     f"₹{portfolio_value:,.0f}"
 )
 
-# TRADE RECOMMENDATION
+# FINAL RECOMMENDATION
 
-st.subheader(" Recommendation")
+st.subheader(" Trading Recommendation")
 
 if signal == "BUY":
 
     st.success(
         f"""
-        Recommendation:
-        BUY
+Recommendation: BUY
 
-        Predicted Price:
-        ₹{prediction:.2f}
+Predicted Price: ₹{prediction:.2f}
 
-        Current Price:
-        ₹{current_price:.2f}
-        """
+Current Price: ₹{current_price:.2f}
+"""
     )
 
 else:
 
     st.warning(
         f"""
-        Recommendation:
-        SELL
+Recommendation: SELL
 
-        Predicted Price:
-        ₹{prediction:.2f}
+Predicted Price: ₹{prediction:.2f}
 
-        Current Price:
-        ₹{current_price:.2f}
-        """
+Current Price: ₹{current_price:.2f}
+"""
     )
 
 st.success(
     " AI Stock Trading Dashboard Loaded Successfully"
 )
+
+alert = generate_alert(
+    current_price,
+    prediction
+)
+
+st.subheader(" Market Alert")
+
+st.info(alert)
